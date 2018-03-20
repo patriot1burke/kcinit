@@ -58,8 +58,11 @@ func Password(msg string) string {
         fmt.Fprintf(os.Stderr, msg);
         pw, err := terminal.ReadPassword(int(syscall.Stdin))
         if (err != nil) {
+            // terminal may not be available, so input password in clear text
             pw, _, _ = reader.ReadLine();
         }
+        // terminal password input eats newline,
+        fmt.Fprintln(os.Stderr)
         return string(pw)
     }
 }

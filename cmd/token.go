@@ -67,6 +67,11 @@ func token(cmd *cobra.Command, args []string) {
 
     res, err := Token().Request().Form(form).Post()
 
+    if (err != nil) {
+        console.Writeln("Failure: connection failed")
+        os.Exit(1)
+    }
+
     if (res.Status() != 200) {
         if (res.MediaType() != "") {
             var json map[string]interface{}
