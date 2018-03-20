@@ -49,6 +49,6 @@ func ReadDefault(msg string, defval string) string {
 }
 func Password(msg string) string {
 	fmt.Fprintf(os.Stderr, msg);
-	pw, _ := terminal.ReadPassword(syscall.Stdin)
+	pw, _ := terminal.ReadPassword(int(syscall.Stdin))
 	return string(pw)
 }
