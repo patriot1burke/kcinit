@@ -14,6 +14,9 @@ import (
 
 var Trace = false
 
+var NoMask = false
+
+
 var reader = bufio.NewReader(os.Stdin)
 
 func Write(msg ...interface{}) {
@@ -33,12 +36,12 @@ func ReadLine(msg string) string {
 	fmt.Fprintf(os.Stderr, msg);
 
 	text, _, _ := reader.ReadLine();
-	return strings.TrimSpace(string(text));
+	return strings.TrimSpace(string(text))
 
 }
 func ReadDefault(msg string, defval string) string {
 	fmt.Fprintf(os.Stderr, msg + " [" + defval + "]: ");
-	b, _, _ := reader.ReadLine();
+	b, _, _ := reader.ReadLine()
     text := string(b)
 	if (text == "") {
 		return defval
@@ -48,7 +51,15 @@ func ReadDefault(msg string, defval string) string {
 
 }
 func Password(msg string) string {
-	fmt.Fprintf(os.Stderr, msg);
-	pw, _ := terminal.ReadPassword(int(syscall.Stdin))
-	return string(pw)
+	if (NoMask) {
+	    return ReadLine(msg)
+
+    } else {
+        fmt.Fprintf(os.Stderr, msg);
+        pw, err := terminal.ReadPassword(int(syscall.Stdin))
+        if (err != nil) {
+            pw, _, _ = reader.ReadLine();
+        }
+        return string(pw)
+    }
 }
