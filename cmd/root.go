@@ -32,15 +32,15 @@ var rootCmd = &cobra.Command{
 	Use:   "kcinit",
 	Short: "Keycloak command line login utility.",
 	Long: `Keycloak command line login utility allows you to login to a Keycloak realm and manage an sso session
-between your command line tools.  Applications can use this tool in wrapper scripts to their command line applications to
-retrieve and manage access tokens to back end REST services secured by Keycloak.
+between your command line tools.  Command line applications can use this tool to obtain access tokens they
+need to invoke on back end REST services secured by Keycloak.
 
-For example, let's say you have a command line application called 'oc'.  Your would write a wrapper script like the following:
+For example, let's say you have a command line application called 'kubectl' that accepts a '--token' flag.  You could 
+create an alias as follows:
 
-#!/bin/sh
-oc --token=$(kcinit token oc) $@
+$ alias kubectl='kubectl --token=$(kcinit token kubernetes)'
 
-kcinit would then prompt for login credentials and create an access token for the oc client.
+kcinit would then prompt for login credentials and create an access token targeted for the kubernetes client.
 
 `,
 	// Uncomment the following line if your bare application

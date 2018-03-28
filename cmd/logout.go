@@ -29,10 +29,10 @@ var logoutCmd = &cobra.Command{
 func logout(cmd *cobra.Command, args []string) {
     masterClient := viper.GetString("client")
     if (masterClient != "" ) {
-        token := ReadRefreshToken(masterClient)
-        if (token != "") {
+        token, err := ReadToken(masterClient)
+        if (token != nil && err == nil) {
             form := ClientForm()
-            form.Set("refresh_token", token)
+            form.Set("refresh_token", token.RefreshToken)
             // don't care about response
             Logout().Request().Form(form).Post()
         }

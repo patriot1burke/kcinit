@@ -64,8 +64,8 @@ func login(cmd *cobra.Command, args []string) {
     CheckInstalled()
     forceLogin, _ := cmd.Flags().GetBool("force")
     if (!forceLogin) {
-        token, err := ReadAccessToken(viper.GetString("client"))
-        if (token != "" && err == nil) {
+        token, err := ReadToken(viper.GetString("client"))
+        if (token != nil && err == nil) {
             console.Writeln("Already logged in...")
             return
         }
@@ -75,7 +75,7 @@ func login(cmd *cobra.Command, args []string) {
     console.Writeln("Login successful!")
 }
 
-func DoLogin() string {
+func DoLogin() *AccessTokenResponse {
     console.Traceln("login....")
     code := loginPrompt()
     console.Traceln("Got code!", code)
@@ -106,7 +106,7 @@ func DoLogin() string {
     var tokenResponse AccessTokenResponse
     res.ReadJson(&tokenResponse)
     tokenResponse.ProcessTokenResponse(viper.GetString("client"))
-    return tokenResponse.AccessToken
+    return &tokenResponse
 }
 
 
@@ -131,7 +131,7 @@ func loginPrompt() string {
 
         if (res.Status() == 403) {
             console.Traceln("403")
-            if (res.MediaType() != "") {
+            if (strings.EqualFold("text/plain", res.MediaType())) {
                 text, _ := res.ReadText()
                 console.Writeln(text)
             } else {
@@ -236,6 +236,11 @@ func loginPrompt() string {
                     currparam.label = value
                 } else if (name == "mask") {
                     currparam.mask = value == "true"
+                } else if (name == "browserRequired") {
+                    if (res.MediaType() == "") {
+                        console.Writeln("A browser is required to login.  Please login via --browser mode.")
+                    }
+                    os.Exit(1)
                 }
             }
 
@@ -254,9 +259,11 @@ func loginPrompt() string {
             }
             res, err = rest.New().Target(callback).Request().Form(form).Post()
         } else {
-            console.Writeln("Unknown response from server:", res.Status())
-            if (res.Status() == 200 && res.MediaType() != "") {
-                console.Traceln(res.ReadText())
+            if (strings.EqualFold("text/plain", res.MediaType())) {
+                console.Writeln(res.ReadText())
+            } else {
+                console.Writeln("Unknown response from server:", res.Status())
+
             }
             os.Exit(1)
         }

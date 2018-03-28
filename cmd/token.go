@@ -35,6 +35,53 @@ var tokenCmd = &cobra.Command{
 	Run: token,
 }
 
+type ResponseType struct {
+    Status int
+}
+
+type SpecType struct {
+    Interactive bool
+    Response ResponseType
+}
+
+type ExecCredential struct {
+    Spec SpecType
+}
+
+/*
+func ddd() {
+   data := `{ "apiVersion": "client.authentication.k8s.io/v1alpha1", "kind": "ExecCredential", "spec": { "interactive": true } }`
+  var exec ExecCredential
+  json.Unmarshal([]byte(data), &exec)
+
+  console.Writeln("Exec interactive", exec.Spec.Interactive)
+
+}
+*/
+
+
+func tokenOutput(token *AccessTokenResponse) {
+    execInfo := os.Getenv("KUBERNETES_EXEC_INFO")
+    if (execInfo == "") {
+        fmt.Fprint(os.Stdout, token.AccessToken)
+    } else {
+        var data ExecCredential
+        json.Unmarshal([]byte(execInfo), &data)
+        console.Writeln("KUBERNETES_EXEC_INFO", execInfo)
+        console.Writeln()
+        output := map[string]interface{} {
+            "apiVersion": "client.authentication.k8s.io/v1alpha1",
+            "kind": "ExecCredential",
+            "status": map[string]string {
+                "token": token.AccessToken,
+                "expirationTimestamp": time.Unix(token.ExpiresIn, 0).Format(time.RFC3339),
+            },
+        }
+        b, _ := json.Marshal(output)
+        fmt.Fprint(os.Stdout, string(b))
+    }
+}
+
 func token(cmd *cobra.Command, args []string) {
     CheckInstalled()
     client := viper.GetString("client")
@@ -43,24 +90,24 @@ func token(cmd *cobra.Command, args []string) {
         client = args[0]
     }
 
-    token, err := ReadAccessToken(client)
+    token, err := ReadToken(client)
     if (err == nil) {
-        fmt.Fprint(os.Stdout, token)
+        tokenOutput(token)
         return
     }
     if (client == masterClient) {
         masterToken := DoLogin()
-        fmt.Fprint(os.Stdout, masterToken)
+        tokenOutput(masterToken)
         return
     }
-    masterToken, err := ReadAccessToken(masterClient)
+    masterToken, err := ReadToken(masterClient)
     if (err != nil) {
         masterToken = DoLogin()
     }
 
     form := ClientForm()
     form.Set("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange")
-    form.Set("subject_token", masterToken)
+    form.Set("subject_token", masterToken.AccessToken)
     form.Set("subject_token_type", "urn:ietf:params:oauth:token-type:access_token")
     form.Set("requested_token_type", "urn:ietf:params:oauth:token-type:refresh_token")
     form.Set("audience", client)
@@ -89,10 +136,10 @@ func token(cmd *cobra.Command, args []string) {
     var tokenResponse AccessTokenResponse
     res.ReadJson(&tokenResponse)
     tokenResponse.ProcessTokenResponse(client)
-    fmt.Fprint(os.Stdout, tokenResponse.AccessToken)
+    tokenOutput(&tokenResponse)
 }
 
-func (tokenResponse AccessTokenResponse) ProcessTokenResponse(client string) {
+func (tokenResponse *AccessTokenResponse) ProcessTokenResponse(client string) {
 	tokenResponse.ExpiresIn = tokenResponse.ExpiresIn + time.Now().Unix()
 	buf, _ := json.Marshal(tokenResponse)
 	tokenFile := TokenFile(client)
@@ -101,48 +148,29 @@ func (tokenResponse AccessTokenResponse) ProcessTokenResponse(client string) {
 	ioutil.WriteFile(tokenFile, buf, 0600)
 }
 
-func ReadRefreshToken(client string) string {
+func ReadToken(client string) (*AccessTokenResponse, error) {
     tokenFile := TokenFile(client)
     if _, err := os.Stat(tokenFile); os.IsNotExist(err) {
-        return ""
+        return nil, err
     }
     buf, err := ioutil.ReadFile(tokenFile)
     if (err != nil) {
         os.Remove(tokenFile)
-        return ""
+        return nil, err
     }
     var tokenResponse AccessTokenResponse
     err = json.Unmarshal(buf, &tokenResponse)
     if (err != nil) {
         os.Remove(tokenFile)
-        return ""
-    }
-    return tokenResponse.RefreshToken
-}
-
-func ReadAccessToken(client string) (string, error) {
-    tokenFile := TokenFile(client)
-    if _, err := os.Stat(tokenFile); os.IsNotExist(err) {
-        return "", err
-    }
-    buf, err := ioutil.ReadFile(tokenFile)
-    if (err != nil) {
-        os.Remove(tokenFile)
-        return "", err
-    }
-    var tokenResponse AccessTokenResponse
-    err = json.Unmarshal(buf, &tokenResponse)
-    if (err != nil) {
-        os.Remove(tokenFile)
-        return "", err
+        return nil, err
     }
     if (time.Now().Unix() < tokenResponse.ExpiresIn) {
-        return tokenResponse.AccessToken, nil
+        return &tokenResponse, nil
     }
 
     if (tokenResponse.RefreshToken == "") {
         os.Remove(tokenFile)
-        return "", errors.New("no refresh token")
+        return nil, errors.New("no refresh token")
     }
 
     form := ClientForm()
@@ -152,16 +180,15 @@ func ReadAccessToken(client string) (string, error) {
     res, err := Token().Request().Form(form).Post()
     if (err != nil || res.Status() != 200) {
         os.Remove(tokenFile)
-        return "", errors.New("Failed to refresh")
+        return nil, errors.New("Failed to refresh")
     }
 
     var responseJson AccessTokenResponse
     res.ReadJson(&responseJson)
     responseJson.ProcessTokenResponse(client)
-    return responseJson.AccessToken, nil
+    return &responseJson, nil
+
 }
-
-
 
 func init() {
 	rootCmd.AddCommand(tokenCmd)
