@@ -65,6 +65,10 @@ func (client *RestClient) Target(uri string) (*WebTarget) {
 	}
 }
 
+func (target *WebTarget) Url() (url.URL) {
+	return target.url
+}
+
 func (target *WebTarget) Path(path string) (*WebTarget) {
 	newTarget := &WebTarget{
 		url:    target.url,

@@ -23,6 +23,13 @@ import (
     "unicode"
     "net/url"
     "github.com/keycloak/kcinit/rest"
+    "net"
+    "fmt"
+    "net/http"
+    "runtime"
+    "os/exec"
+    "time"
+    "golang.org/x/net/context"
 )
 
 // loginCmd represents the login command
@@ -43,7 +50,8 @@ type AccessTokenResponse struct {
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
-	loginCmd.Flags().BoolP("force", "f", false, "Forces relogin terminating existing session")
+    loginCmd.Flags().BoolP("force", "f", false, "Forces relogin, existing session terminated.")
+    loginCmd.Flags().Bool("browser", false, "Launch and login through a browser.")
 }
 
 type LoginParams struct {
@@ -70,19 +78,30 @@ func login(cmd *cobra.Command, args []string) {
             return
         }
     }
-    DoLogin()
+
+    browser, _ := cmd.Flags().GetBool("browser")
+    if (browser) {
+        Browser()
+    } else {
+        DoLogin()
+    }
+
     console.Writeln()
     console.Writeln("Login successful!")
 }
 
 func DoLogin() *AccessTokenResponse {
     console.Traceln("login....")
-    code := loginPrompt()
+    code, redirect := loginPrompt()
     console.Traceln("Got code!", code)
+    return codeToToken(code, redirect)
+}
+
+func codeToToken(code string, redirect string) *AccessTokenResponse {
     form := ClientForm()
     form.Set("grant_type", "authorization_code")
     form.Set("code", code)
-    form.Set("redirect_uri", "urn:ietf:wg:oauth:2.0:oob")
+    form.Set("redirect_uri", redirect)
     console.Traceln("code2token params:", form)
     res, err := Token().Request().Form(form).Post()
     if (err != nil) {
@@ -110,12 +129,20 @@ func DoLogin() *AccessTokenResponse {
 }
 
 
-func loginPrompt() string {
+func loginPrompt() (string, string) {
+    freePort, err := GetFreePort()
+    var redirect string
+    if (err != nil) {
+        freePort = -1
+        redirect = "http://localhost:666"
+    } else {
+        redirect = fmt.Sprintf("http://localhost:%d", freePort)
+    }
     console.Traceln("invoke initial request")
 	res, err := Authorization().
 		QueryParam("response_type", "code").
         QueryParam("client_id", viper.GetString("client")).
-        QueryParam("redirect_uri", "urn:ietf:wg:oauth:2.0:oob").
+        QueryParam("redirect_uri", redirect).
             QueryParam("scope", "openid").
                 QueryParam("display", "console").
                     Request().Get()
@@ -157,7 +184,7 @@ func loginPrompt() string {
                 }
                 q := url.Query()
                 if (q.Get("code") != "") {
-                    return q.Get("code")
+                    return q.Get("code"), redirect
                 }
 
                 res, err = rest.New().Target(location).Request().Get()
@@ -182,9 +209,11 @@ func loginPrompt() string {
                 console.Writeln("Failure:  Invalid WWW-Authenticate header:", authenticationHeader)
                 os.Exit(1)
             }
+            var wasOutput bool
             if (res.MediaType() != "") {
                 text, err := res.ReadText()
                 if (err == nil) {
+                    wasOutput = true
                     console.Writeln(text)
 
                 }
@@ -213,6 +242,9 @@ func loginPrompt() string {
             var callback = ""
             var currparam *param
             var params = make([]*param, 0)
+            var promptBrowser bool
+            var browserPrompt string
+            var browserPromptAnswer string
             for _, item := range items {
                 console.Traceln("item:",item)
                 var name,value string
@@ -241,6 +273,29 @@ func loginPrompt() string {
                         console.Writeln("A browser is required to login.  Please login via --browser mode.")
                     }
                     os.Exit(1)
+                } else if (name == "browserContinue") {
+                    if (freePort == -1) {
+                        if (!wasOutput) {
+                            console.Writeln("A browser is required to login.  Please login via --browser mode.")
+                        }
+                        os.Exit(1)
+                    }
+                    promptBrowser = true
+                    browserPrompt = value
+                } else if (name == "answer") {
+                    browserPromptAnswer = value
+                }
+            }
+
+            if (promptBrowser) {
+                answer := console.ReadLine(browserPrompt)
+                if (answer == browserPromptAnswer) {
+                    listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", freePort))
+                    if err != nil {
+                        console.Writeln("Cannot start local http server to handle login redirect.")
+                        os.Exit(1)
+                    }
+                    return launch(callback, listener), redirect
                 }
             }
 
@@ -270,6 +325,100 @@ func loginPrompt() string {
 
 
     }
+}
+
+func Browser() *AccessTokenResponse {
+    listener, err := net.Listen("tcp", "localhost:")
+    if err != nil {
+        console.Writeln("Cannot start local http server to handle login redirect.")
+        os.Exit(1)
+    }
+    port := listener.Addr().(*net.TCPAddr).Port
+
+    redirect := fmt.Sprintf("http://localhost:%d", port)
+    url := Authorization().
+        QueryParam("response_type", "code").
+        QueryParam("client_id", viper.GetString("client")).
+        QueryParam("redirect_uri", redirect).
+        QueryParam("scope", "openid").Url()
+
+    code := launch(url.String(), listener)
+    if (code != "") {
+        return codeToToken(code, redirect)
+    } else {
+        console.Writeln("Login failed")
+        os.Exit(1)
+    }
+    return nil
+}
+
+func openBrowser(url string) bool {
+    var args []string
+    switch runtime.GOOS {
+    case "darwin":
+        args = []string{"open"}
+    case "windows":
+        args = []string{"cmd", "/c", "start"}
+    default:
+        args = []string{"xdg-open"}
+    }
+    cmd := exec.Command(args[0], append(args[1:], url)...)
+    return cmd.Start() == nil
+}
+
+func launch(url string, listener net.Listener) string {
+    c := make(chan string)
+
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        url := r.URL
+        q := url.Query()
+        w.Header().Set("Content-Type", "text/html")
+
+        if (q.Get("code") != "") {
+            fmt.Fprintln(w, "<html><h1>Login completed.</h1><div>");
+            fmt.Fprintln(w, "This browser will remain logged in until you close it, logout, or the session expires.");
+            fmt.Fprintln(w, "</div></html>");
+            c <- q.Get("code")
+        } else {
+            fmt.Fprintln(w,"<html><h1>Login attempt failed.</h1><div>");
+            fmt.Fprintln(w,"</div></html>");
+
+            c <- ""
+        }
+
+    })
+
+    srv := &http.Server{}
+    ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+    defer srv.Shutdown(ctx)
 
 
+
+    go func() {
+        if err := srv.Serve(listener); err != nil {
+            // cannot panic, because this probably is an intentional close
+        }
+    }()
+
+    var code string
+    if (openBrowser(url)) {
+        code = <-c
+    }
+
+    return code
+
+}
+
+func GetFreePort() (int, error) {
+    addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+    if err != nil {
+        return 0, err
+    }
+
+    l, err := net.ListenTCP("tcp", addr)
+    if err != nil {
+        return 0, err
+    }
+    defer l.Close()
+    return l.Addr().(*net.TCPAddr).Port, nil
 }
