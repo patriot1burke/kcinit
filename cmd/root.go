@@ -25,8 +25,6 @@ import (
     "github.com/keycloak/kcinit/console"
 )
 
-var cfgFile string
-
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "kcinit",
@@ -41,6 +39,9 @@ create an alias as follows:
 $ alias kubectl='kubectl --token=$(kcinit token kubernetes)'
 
 kcinit would then prompt for login credentials and create an access token targeted for the kubernetes client.
+
+Finally, all global command line switches for kcinit can be specified instead using environment varialbes with the prefix of "KCINIT" and
+a underscore "_" separators.  So, for example --realm-url could be specified by setting an environment variable KCINIT_REALM_URL.
 
 `,
 	// Uncomment the following line if your bare application
@@ -58,13 +59,19 @@ func Execute() {
 	}
 }
 
+var configdir string
+
 func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
-    rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.keycloak/kcinit/kcinit.yaml)")
+    rootCmd.PersistentFlags().StringVar(&configdir, "config", "", "config directory (default is $HOME/.keycloak/kcinit).")
+    rootCmd.PersistentFlags().String("realm-url", "", "realm endpoint.")
+    rootCmd.PersistentFlags().String("login-client", "", "client used for login requests.")
+    rootCmd.PersistentFlags().String("login-secret", "", "client secret used for login requests.")
+    rootCmd.PersistentFlags().Bool(SAVE, false, "Store tokens on disk.  Defaults to true.")
     rootCmd.PersistentFlags().BoolVar(&console.NoMask, "nomask", false, "")
     rootCmd.PersistentFlags().MarkHidden("nomask")
 
@@ -73,27 +80,44 @@ func init() {
     //rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
+const REALM_URL = "realm_url"
+const LOGIN_CLIENT = "login_client"
+const LOGIN_SECRET = "login_secret"
+const SAVE = "save"
+
+
+
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
-	} else {
-        path := ConfigPath()
-        viper.SetConfigFile(path + "/kcinit.yaml")
-    }
+    viper.SetConfigFile(ConfigPath() + "/kcinit.yaml")
+    viper.SetEnvPrefix("kcinit")
     viper.AutomaticEnv() // read in environment variables that match
+    viper.BindEnv(REALM_URL)
+    viper.BindPFlag(REALM_URL, rootCmd.Flags().Lookup("realm-url"))
+    viper.BindEnv(LOGIN_CLIENT)
+    viper.BindPFlag(LOGIN_CLIENT, rootCmd.Flags().Lookup("login-client"))
+    viper.SetDefault(LOGIN_CLIENT, "kcinit")
+    viper.BindEnv(LOGIN_SECRET)
+    viper.BindPFlag(LOGIN_SECRET, rootCmd.Flags().Lookup("login-secret"))
+    viper.BindEnv(SAVE)
+    viper.BindPFlag(SAVE, rootCmd.Flags().Lookup(SAVE))
+    viper.SetDefault(SAVE, true)
+
+
+
 
     // If a config file is found, read it in.
     if err := viper.ReadInConfig(); err == nil {
         //fmt.Println("Using config file:", viper.ConfigFileUsed())
-        InitializeClient()
     }
 }
 
 
 func ConfigPath() string {
-    path := os.Getenv("KC_CONFIG_PATH")
+    if (configdir != "") {
+        return configdir
+    }
+    path := os.Getenv("KCINIT_CONFIG")
     if (path == "") {
         // Find home directory.
         home, err := homedir.Dir()
@@ -123,9 +147,5 @@ func TokenDir() string {
 }
 
 func CheckInstalled() {
-    client := viper.GetString("client")
-    if (client == "") {
-        console.Writeln("Not configured.  Please run the `install` command")
-        os.Exit(1)
-    }
+    InitializeClient()
 }

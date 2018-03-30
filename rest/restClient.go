@@ -122,6 +122,7 @@ func (r *Request) Json(v interface{}) *Request {
 }
 
 func (r *Request) Header(name string, value string) *Request {
+	r.headers.Set(name, value)
 	return r
 }
 

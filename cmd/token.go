@@ -18,12 +18,12 @@ import (
 	"github.com/spf13/cobra"
 	"time"
 	"encoding/json"
-	"github.com/spf13/viper"
 	"github.com/keycloak/kcinit/console"
 	"io/ioutil"
     "os"
     "errors"
     "fmt"
+    "github.com/spf13/viper"
 )
 
 // tokenCmd represents the token command
@@ -48,22 +48,22 @@ type ExecCredential struct {
     Spec SpecType
 }
 
-/*
-func ddd() {
-   data := `{ "apiVersion": "client.authentication.k8s.io/v1alpha1", "kind": "ExecCredential", "spec": { "interactive": true } }`
-  var exec ExecCredential
-  json.Unmarshal([]byte(data), &exec)
-
-  console.Writeln("Exec interactive", exec.Spec.Interactive)
-
+func formatToken(token *AccessTokenResponse, tokenType string) string {
+    if (tokenType == "access") {
+        return token.AccessToken
+    } else if (tokenType == "id") {
+        return token.IdToken
+    } else if (tokenType == "refresh") {
+        return token.RefreshToken
+    } else {
+        panic("Illegal token type: " + tokenType)
+    }
 }
-*/
 
-
-func tokenOutput(token *AccessTokenResponse) {
+func tokenOutput(token *AccessTokenResponse, tokenType string) {
     execInfo := os.Getenv("KUBERNETES_EXEC_INFO")
     if (execInfo == "") {
-        fmt.Fprint(os.Stdout, token.AccessToken)
+        fmt.Fprint(os.Stdout, formatToken(token, tokenType))
     } else {
         var data ExecCredential
         json.Unmarshal([]byte(execInfo), &data)
@@ -73,7 +73,7 @@ func tokenOutput(token *AccessTokenResponse) {
             "apiVersion": "client.authentication.k8s.io/v1alpha1",
             "kind": "ExecCredential",
             "status": map[string]string {
-                "token": token.AccessToken,
+                "token": formatToken(token, tokenType),
                 "expirationTimestamp": time.Unix(token.ExpiresIn, 0).Format(time.RFC3339),
             },
         }
@@ -83,21 +83,30 @@ func tokenOutput(token *AccessTokenResponse) {
 }
 
 func token(cmd *cobra.Command, args []string) {
+    tokenType, _ := cmd.Flags().GetString("token-type")
+    if (tokenType != "access" && tokenType != "refresh" && tokenType != "id") {
+        console.Writeln("Illegal token type requested.")
+        os.Exit(1)
+
+    }
+
     CheckInstalled()
-    client := viper.GetString("client")
+    client := viper.GetString(LOGIN_CLIENT)
     masterClient := client
     if (len(args) == 1) {
         client = args[0]
     }
 
-    token, err := ReadToken(client)
-    if (err == nil) {
-        tokenOutput(token)
-        return
+    if (!loginFlags.force) {
+        token, err := ReadToken(client)
+        if (err == nil) {
+            tokenOutput(token, tokenType)
+            return
+        }
     }
     if (client == masterClient) {
         masterToken := DoLogin()
-        tokenOutput(masterToken)
+        tokenOutput(masterToken, tokenType)
         return
     }
     masterToken, err := ReadToken(masterClient)
@@ -136,10 +145,13 @@ func token(cmd *cobra.Command, args []string) {
     var tokenResponse AccessTokenResponse
     res.ReadJson(&tokenResponse)
     tokenResponse.ProcessTokenResponse(client)
-    tokenOutput(&tokenResponse)
+    tokenOutput(&tokenResponse, tokenType)
 }
 
 func (tokenResponse *AccessTokenResponse) ProcessTokenResponse(client string) {
+    if (!viper.GetBool(SAVE)) {
+        return
+    }
 	tokenResponse.ExpiresIn = tokenResponse.ExpiresIn + time.Now().Unix()
 	buf, _ := json.Marshal(tokenResponse)
 	tokenFile := TokenFile(client)
@@ -192,5 +204,11 @@ func ReadToken(client string) (*AccessTokenResponse, error) {
 
 func init() {
 	rootCmd.AddCommand(tokenCmd)
+    tokenCmd.Flags().String("token-type", "access", "Token type to output.  access, id, or refresh are valid options.  access is default.")
+    tokenCmd.Flags().BoolVarP(&loginFlags.force, "force", "f", false, "Forces relogin, existing session terminated.")
+    tokenCmd.Flags().BoolVar(&loginFlags.browser, "browser", false, "Launch and login through a browser.")
+    tokenCmd.Flags().BoolVar(&loginFlags.offline, "offline", false, "Request offline access.")
+    tokenCmd.Flags().BoolVar(&loginFlags.fakeBrowser, "fake-browser", false, "Launch and login through a browser.")
+    tokenCmd.Flags().MarkHidden("fake-browser")
 
 }

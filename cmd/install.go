@@ -31,18 +31,21 @@ var installCmd = &cobra.Command{
 }
 
 func install(cmd *cobra.Command, args []string) {
+	runInstall()
+}
+
+func runInstall() {
 	server := console.ReadDefault("Authentication server URL", "http://localhost:8080/auth")
 	realm := console.ReadDefault("Name of realm", "master")
-	client := console.ReadDefault("OAuth client id", "kcinit")
-	clientSecret := console.ReadLine("Client secret [none]: ")
-
-	viper.Set("server", server)
-	viper.Set("realm", realm)
-	viper.Set("client", client)
-	viper.Set("clientSecret", clientSecret)
-
+	client := console.ReadDefault("Login client id", "kcinit")
+	clientSecret := console.ReadLine("Login client secret [none]: ")
+	viper.Set(REALM_URL, server+"/realms/"+realm)
+	viper.Set(LOGIN_CLIENT, client)
+	viper.Set(LOGIN_SECRET, clientSecret)
+	viper.Set(SAVE, true)
 	os.MkdirAll(ConfigPath(), 0700)
 	configPath := ConfigPath() + "/kcinit.yaml"
+	console.Writeln("CONFIG PATH: " + configPath)
 	viper.SetConfigFile(configPath)
 	viper.WriteConfig()
 }

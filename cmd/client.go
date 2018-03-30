@@ -19,9 +19,17 @@ var keycloak *rest.RestClient
 var base *rest.WebTarget
 
 func InitializeClient() {
+    realmUrl := viper.GetString(REALM_URL)
+    if (realmUrl == "") {
+        answer := console.ReadLine("Realm URL not set, do you want to install a config file? [y/n]")
+        if (answer == "n") {
+            os.Exit(1)
+        }
+        runInstall()
+        realmUrl = viper.GetString(REALM_URL)
+    }
 	keycloak = rest.New()
-    server := viper.GetString("server")
-    base = keycloak.Target(server)
+    base = keycloak.Target(realmUrl)
 	if (base == nil) {
 	    console.Writeln("Issues initializing client")
 	    os.Exit(1)
@@ -30,8 +38,9 @@ func InitializeClient() {
 
 func ClientForm() (url.Values) {
     form := url.Values{}
-    form.Set("client_id", viper.GetString("client"))
-    secret := viper.GetString("clientSecret")
+    clientId := viper.GetString(LOGIN_CLIENT)
+    form.Set("client_id", clientId)
+    secret := viper.GetString(LOGIN_SECRET)
     if (secret != "") {
         form.Set("client_secret", secret)
     }
@@ -40,10 +49,7 @@ func ClientForm() (url.Values) {
 
 
 func Oidc() *rest.WebTarget {
-	realm:= viper.GetString("realm")
-    return  base.Path("realms").
-		Path(realm).
-			Path("protocol/openid-connect")
+    return  base.Path("protocol/openid-connect")
 }
 
 func Authorization() *rest.WebTarget {
@@ -56,7 +62,11 @@ func Token() *rest.WebTarget {
 
 
 func Logout() *rest.WebTarget {
-	return Oidc().Path("logout")
+    return Oidc().Path("logout")
+}
+
+func Userinfo() *rest.WebTarget {
+    return Oidc().Path("userinfo")
 }
 
 

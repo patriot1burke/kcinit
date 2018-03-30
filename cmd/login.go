@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
     "github.com/keycloak/kcinit/console"
     "os"
     "strings"
@@ -30,6 +29,7 @@ import (
     "os/exec"
     "time"
     "golang.org/x/net/context"
+    "github.com/spf13/viper"
 )
 
 // loginCmd represents the login command
@@ -48,14 +48,25 @@ type AccessTokenResponse struct {
     RefreshExpiresIn int64 `json:"refresh_expires_in"`
 }
 
-var FakeBrowser bool
 
+
+type loginFlagsStruct struct {
+    force bool
+    browser bool
+    offline bool
+    fakeBrowser bool
+}
+
+var loginFlags = &loginFlagsStruct{
+
+}
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
-    loginCmd.Flags().BoolP("force", "f", false, "Forces relogin, existing session terminated.")
-    loginCmd.Flags().Bool("browser", false, "Launch and login through a browser.")
-    loginCmd.Flags().BoolVar(&FakeBrowser, "fake-browser", false, "Launch and login through a browser.")
+    loginCmd.Flags().BoolVarP(&loginFlags.force, "force", "f", false, "Forces relogin, existing session terminated.")
+    loginCmd.Flags().BoolVar(&loginFlags.browser, "browser", false, "Launch and login through a browser.")
+    loginCmd.Flags().BoolVar(&loginFlags.offline, "offline", false, "Request offline access.")
+    loginCmd.Flags().BoolVar(&loginFlags.fakeBrowser, "fake-browser", false, "Launch and login through a browser.")
     loginCmd.Flags().MarkHidden("fake-browser")
 }
 
@@ -76,31 +87,27 @@ type param struct {
 
 func login(cmd *cobra.Command, args []string) {
     CheckInstalled()
-    forceLogin, _ := cmd.Flags().GetBool("force")
-    if (!forceLogin) {
-        token, err := ReadToken(viper.GetString("client"))
+    if (!loginFlags.force) {
+        token, err := ReadToken(viper.GetString(LOGIN_CLIENT))
         if (token != nil && err == nil) {
             console.Writeln("Already logged in...")
             return
         }
     }
 
-    browser, _ := cmd.Flags().GetBool("browser")
-    if (browser) {
-        Browser()
-    } else {
-        DoLogin()
-    }
+    DoLogin()
 
     console.Writeln()
     console.Writeln("Login successful!")
 }
 
 func DoLogin() *AccessTokenResponse {
-    console.Traceln("login....")
-    code, redirect := loginPrompt()
-    console.Traceln("Got code!", code)
-    return codeToToken(code, redirect)
+    if (loginFlags.browser) {
+        return Browser()
+    } else {
+        code, redirect := loginPrompt()
+        return codeToToken(code, redirect)
+    }
 }
 
 func codeToToken(code string, redirect string) *AccessTokenResponse {
@@ -130,7 +137,7 @@ func codeToToken(code string, redirect string) *AccessTokenResponse {
     }
     var tokenResponse AccessTokenResponse
     res.ReadJson(&tokenResponse)
-    tokenResponse.ProcessTokenResponse(viper.GetString("client"))
+    tokenResponse.ProcessTokenResponse(viper.GetString(LOGIN_CLIENT))
     return &tokenResponse
 }
 
@@ -145,11 +152,16 @@ func loginPrompt() (string, string) {
         redirect = fmt.Sprintf("http://localhost:%d", freePort)
     }
     console.Traceln("invoke initial request")
+
+    scope := "openid"
+    if (loginFlags.offline) {
+        scope = scope + " offline_access"
+    }
 	res, err := Authorization().
 		QueryParam("response_type", "code").
-        QueryParam("client_id", viper.GetString("client")).
+        QueryParam("client_id", viper.GetString(LOGIN_CLIENT)).
         QueryParam("redirect_uri", redirect).
-            QueryParam("scope", "openid").
+            QueryParam("scope", scope).
                 QueryParam("display", "console").
                     Request().Get()
 
@@ -344,7 +356,7 @@ func Browser() *AccessTokenResponse {
     redirect := fmt.Sprintf("http://localhost:%d", port)
     url := Authorization().
         QueryParam("response_type", "code").
-        QueryParam("client_id", viper.GetString("client")).
+        QueryParam("client_id", viper.GetString(LOGIN_CLIENT)).
         QueryParam("redirect_uri", redirect).
         QueryParam("scope", "openid").Url()
 
@@ -407,7 +419,7 @@ func launch(url string, listener net.Listener) string {
     }()
 
     var code string
-    if (FakeBrowser) {
+    if (loginFlags.fakeBrowser) {
         // this switch is for testing purposes as we cannot launch a browser in a automated test
         fmt.Fprint(os.Stdout, url)
         code = <-c

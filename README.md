@@ -5,31 +5,36 @@ This is a command line utility to perform login on a Keycloak realm through Open
 to provide application developers a mechanism to obtain access tokens for their command line applications.  Logins
 done through this tool are persisted so that they can live between command line invocations and even console restarts.
 Applications can use this tool to provide login and SSO to other command line applications.
-For example, let's say you have a command line util call 'oc' that needs an access token to invoke on its backend.  You could write a wrapper script
-to obtain the token from kcinit and pass it to the oc command via a flag or environment variable
+For example, let's say you have a command line util call 'kubectl' that needs an access token to invoke on its backend
+and it can receive this token from a --token command line option.  You could do this:
 
-     # filename: oc
-     #!/bin/sh
-     token=$(kcinit token oc)
-     /path/to/binary/oc --token=$token $@
+     kubectl --token=$(kcinit token)
 
-`kcinit` would prompt you for login information and obtain a token for the `oc` client application registered in the Keycloak realm.
+`kcinit` would prompt you for login information and obtain a token for the `kubectl` client application registered in the Keycloak realm.
+You could also set up an alias for this.
+
+     alias kubectl='kubectl --token=$(kcinit token)
 
 Setup
 -----
-
-You will first have to set up and register a master oauth client in your keycloak realm that will be used as the master login
+In your Keycloak realm, you will first have to set up and register a master oauth client in your keycloak realm that will be used as the master login
 session for your command line console.  You can name this client anything you want and it can be a public or confidential client.
 This client must have token exchange permissions for each application that you want to do SSO with on the command line console.
 
+Any kcinit command will prompt you for additional information if you have not installed kcinit correctly in your directory.
 
-Next, you have to configure kcinit for your user account. Run the following to set the tool:
+While kcinit configuration can obtain any config parameter from the command line or even an environment variable,
+you should
+
+
+The kcinit program can obtain connection information from command line parameters, environment variables, or through a preconfigured config file.
+To create a preconfigured config file, run the following command:
     
      $ kcinit install
      
 This will prompt you for information about the URL of the auth server, the keycloak realm, and the client you created.
 This will store configuration information with `$HOME/.keycloak/kcinit`.  If you want to store your configuration someplace else,
-set the `KC_CONFIG_PATH` environment variable before running `install`.
+set the `KCINIT_CONFIG` environment variable before running `install`.
 
 Usage
 -----

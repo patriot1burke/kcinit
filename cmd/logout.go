@@ -16,8 +16,8 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-    "github.com/spf13/viper"
     "os"
+    "github.com/spf13/viper"
 )
 
 // logoutCmd represents the logout command
@@ -27,8 +27,10 @@ var logoutCmd = &cobra.Command{
 }
 
 func logout(cmd *cobra.Command, args []string) {
-    masterClient := viper.GetString("client")
-    if (masterClient != "" ) {
+    realmUrl := viper.GetString(REALM_URL)
+    masterClient := viper.GetString(LOGIN_CLIENT)
+    if (masterClient != "" && realmUrl != "") {
+        InitializeClient()
         token, err := ReadToken(masterClient)
         if (token != nil && err == nil) {
             form := ClientForm()
