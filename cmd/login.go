@@ -48,10 +48,15 @@ type AccessTokenResponse struct {
     RefreshExpiresIn int64 `json:"refresh_expires_in"`
 }
 
+var FakeBrowser bool
+
+
 func init() {
 	rootCmd.AddCommand(loginCmd)
     loginCmd.Flags().BoolP("force", "f", false, "Forces relogin, existing session terminated.")
     loginCmd.Flags().Bool("browser", false, "Launch and login through a browser.")
+    loginCmd.Flags().BoolVar(&FakeBrowser, "fake-browser", false, "Launch and login through a browser.")
+    loginCmd.Flags().MarkHidden("fake-browser")
 }
 
 type LoginParams struct {
@@ -67,6 +72,7 @@ type param struct {
     label string
     mask bool
 }
+
 
 func login(cmd *cobra.Command, args []string) {
     CheckInstalled()
@@ -401,7 +407,11 @@ func launch(url string, listener net.Listener) string {
     }()
 
     var code string
-    if (openBrowser(url)) {
+    if (FakeBrowser) {
+        // this switch is for testing purposes as we cannot launch a browser in a automated test
+        fmt.Fprint(os.Stdout, url)
+        code = <-c
+    } else if (openBrowser(url)) {
         code = <-c
     }
 

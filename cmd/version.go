@@ -28,7 +28,7 @@ var versionCmd = &cobra.Command{
 }
 
 func version(cmd *cobra.Command, args []string) {
-	console.Writeln("kcinit version \"0.3\"")
+	console.Writeln("kcinit version \"0.4\"")
 }
 
 func init() {
