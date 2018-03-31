@@ -390,16 +390,20 @@ func launch(url string, listener net.Listener) string {
     http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
         url := r.URL
         q := url.Query()
+
+        delegated := DelegationComplete()
+
         w.Header().Set("Content-Type", "text/html")
 
         if (q.Get("code") != "") {
-            fmt.Fprintln(w, "<html><h1>Login completed.</h1><div>");
-            fmt.Fprintln(w, "This browser will remain logged in until you close it, logout, or the session expires.");
-            fmt.Fprintln(w, "</div></html>");
+            url := delegated.Url()
+            w.Header().Set("Location", (&url).String())
+            w.WriteHeader(302)
             c <- q.Get("code")
         } else {
-            fmt.Fprintln(w,"<html><h1>Login attempt failed.</h1><div>");
-            fmt.Fprintln(w,"</div></html>");
+            url := delegated.QueryParam("error", "true").Url()
+            w.Header().Set("Location", (&url).String())
+            w.WriteHeader(302)
 
             c <- ""
         }

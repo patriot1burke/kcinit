@@ -69,6 +69,10 @@ func Userinfo() *rest.WebTarget {
     return Oidc().Path("userinfo")
 }
 
+func DelegationComplete() *rest.WebTarget {
+    return Oidc().Path("delegated")
+}
+
 
 
 
